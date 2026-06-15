@@ -8,9 +8,8 @@ import UIKit
 actor ThumbnailCache {
     static let shared = ThumbnailCache()
 
-    /// NSCache is thread-safe, so it can be read without hopping onto the actor.
-    private nonisolated let cache = NSCache<NSURL, UIImage>()
-    private nonisolated let session: URLSession
+    private let cache = NSCache<NSURL, UIImage>()
+    private let session: URLSession
 
     /// Tracks in-flight downloads so concurrent rows requesting the same URL
     /// reuse a single task instead of spawning duplicates.
@@ -30,22 +29,23 @@ actor ThumbnailCache {
         config.timeoutIntervalForRequest = 20
         session = URLSession(configuration: config)
 
-        let cache = self.cache
         NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil,
             queue: .main
         ) { _ in
-            cache.removeAllObjects()
+            Task {
+                await ThumbnailCache.shared.clearMemory()
+            }
         }
     }
 
-    nonisolated func cachedImage(for url: URL) -> UIImage? {
+    func cachedImage(for url: URL) -> UIImage? {
         cache.object(forKey: url as NSURL)
     }
 
     /// Returns a downsampled thumbnail, coalescing duplicate requests.
-    func image(for url: URL, maxPixelSize: CGFloat) async -> UIImage? {
+    func image(for url: URL, maxPixelSize: CGFloat, scale: CGFloat) async -> UIImage? {
         if let cached = cache.object(forKey: url as NSURL) {
             return cached
         }
@@ -56,7 +56,7 @@ actor ThumbnailCache {
         let session = self.session
         let task = Task<UIImage?, Never>.detached(priority: .utility) {
             guard let (data, _) = try? await session.data(from: url) else { return nil }
-            return ThumbnailCache.downsample(data: data, maxPixelSize: maxPixelSize)
+            return ThumbnailCache.downsample(data: data, maxPixelSize: maxPixelSize, scale: scale)
         }
         inFlight[url] = task
         let image = await task.value
@@ -69,14 +69,17 @@ actor ThumbnailCache {
         return image
     }
 
+    private func clearMemory() {
+        cache.removeAllObjects()
+    }
+
     /// Decodes the image at a reduced resolution using ImageIO so we never hold
     /// full-size bitmaps in memory for a tiny thumbnail slot.
-    private static func downsample(data: Data, maxPixelSize: CGFloat) -> UIImage? {
+    private static func downsample(data: Data, maxPixelSize: CGFloat, scale: CGFloat) -> UIImage? {
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
             return nil
         }
-        let scale = UIScreen.main.scale
         let maxDimension = maxPixelSize * scale
         let options = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -99,6 +102,7 @@ struct CachedThumbnail<Placeholder: View>: View {
     let maxPixelSize: CGFloat
     @ViewBuilder let placeholder: () -> Placeholder
 
+    @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
 
     var body: some View {
@@ -121,12 +125,16 @@ struct CachedThumbnail<Placeholder: View>: View {
             image = nil
             return
         }
-        if let cached = ThumbnailCache.shared.cachedImage(for: url) {
+        if let cached = await ThumbnailCache.shared.cachedImage(for: url) {
             image = cached
             return
         }
         image = nil
-        let loaded = await ThumbnailCache.shared.image(for: url, maxPixelSize: maxPixelSize)
+        let loaded = await ThumbnailCache.shared.image(
+            for: url,
+            maxPixelSize: maxPixelSize,
+            scale: displayScale
+        )
         if !Task.isCancelled {
             image = loaded
         }

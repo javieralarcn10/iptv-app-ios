@@ -17,16 +17,21 @@ final class MovieStore {
 
     /// Loads from disk cache if available; only fetches from network when no cache exists.
     func loadIfNeeded() async {
-        guard !hasLoaded else { return }
-        if loadFromDisk() {
+        guard !hasLoaded, !isLoading else { return }
+        isLoading = true
+        error = nil
+        if await loadFromDisk() {
             hasLoaded = true
+            isLoading = false
             return
         }
+        isLoading = false
         await refresh()
     }
 
     /// Always fetches fresh data from the network and updates the disk cache.
     func refresh() async {
+        guard !isLoading else { return }
         isLoading = true
         error = nil
         do {
@@ -34,7 +39,7 @@ final class MovieStore {
             rebuildItems()
             lastUpdated = Date()
             hasLoaded = true
-            saveToDisk()
+            await saveToDisk()
         } catch {
             self.error = error.localizedDescription
         }
@@ -66,11 +71,6 @@ final class MovieStore {
 
     // MARK: - Disk cache
 
-    private struct CachePayload: Codable {
-        let streams: [VODStream]
-        let lastUpdated: Date
-    }
-
     private var cacheURL: URL? {
         FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)
@@ -78,20 +78,24 @@ final class MovieStore {
             .appendingPathComponent("vod_cache.json")
     }
 
-    private func saveToDisk() {
+    private func saveToDisk() async {
         guard let url = cacheURL, let date = lastUpdated else { return }
-        do {
-            let data = try JSONEncoder().encode(CachePayload(streams: streams, lastUpdated: date))
-            try data.write(to: url, options: .atomic)
-        } catch {}
+        let payload = MovieCachePayload(streams: streams, lastUpdated: date)
+        await Task.detached(priority: .utility, operation: {
+            do {
+                let data = try JSONEncoder().encode(payload)
+                try data.write(to: url, options: .atomic)
+            } catch {}
+        }).value
     }
 
     @discardableResult
-    private func loadFromDisk() -> Bool {
-        guard let url = cacheURL,
-              let data = try? Data(contentsOf: url),
-              let payload = try? JSONDecoder().decode(CachePayload.self, from: data)
-        else { return false }
+    private func loadFromDisk() async -> Bool {
+        guard let url = cacheURL else { return false }
+        guard let payload = await Task.detached(priority: .userInitiated, operation: { () -> MovieCachePayload? in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? JSONDecoder().decode(MovieCachePayload.self, from: data)
+        }).value else { return false }
         streams = payload.streams
         lastUpdated = payload.lastUpdated
         rebuildItems()
@@ -103,3 +107,4 @@ final class MovieStore {
         try? FileManager.default.removeItem(at: url)
     }
 }
+

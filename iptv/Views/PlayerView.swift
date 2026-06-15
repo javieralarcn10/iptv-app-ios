@@ -92,10 +92,10 @@ struct PlayerView: View {
         .task {
             await controller.runWatchdog()
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             handleScenePhaseChange(phase)
         }
-        .onChange(of: controller.position) { newValue in
+        .onChange(of: controller.position) { _, newValue in
             if !isDraggingSeek {
                 seekValue = newValue
             }
@@ -302,7 +302,6 @@ struct PlayerView: View {
             scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation)) { _ in }
         }
-        UIViewController.attemptRotationToDeviceOrientation()
     }
 
     // MARK: - Helpers

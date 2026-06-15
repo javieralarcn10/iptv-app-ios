@@ -6,10 +6,15 @@ struct StreamListView: View {
 
     @State private var store = MovieStore.shared
     @State private var searchText = ""
+    @State private var debouncedSearchText = ""
+
+    private var searchQuery: String {
+        CatalogSearch.normalizedQuery(debouncedSearchText)
+    }
 
     private var filtered: [PlayableItem] {
-        searchText.isEmpty ? store.items : store.items.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText)
+        searchQuery.isEmpty ? store.items : store.items.filter {
+            CatalogSearch.matches($0.name, query: searchQuery)
         }
     }
 
@@ -20,6 +25,9 @@ struct StreamListView: View {
         }
         .navigationTitle(section.title)
         .searchable(text: $searchText, prompt: "Buscar")
+        .task(id: searchText) {
+            await debounceSearch(searchText)
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -45,7 +53,8 @@ struct StreamListView: View {
         } else if let err = store.error, store.items.isEmpty {
             ErrorView(message: err) { Task { await store.refresh() } }
         } else {
-            List(filtered) { item in
+            let items = filtered
+            List(items) { item in
                 NavigationLink {
                     PlayerView(item: item)
                 } label: {
@@ -60,7 +69,7 @@ struct StreamListView: View {
             .scrollDismissesKeyboard(.immediately)
             .refreshable { await store.refresh() }
             .overlay {
-                if filtered.isEmpty {
+                if items.isEmpty {
                     ContentUnavailableView(
                         "Sin resultados",
                         systemImage: "magnifyingglass",
@@ -69,6 +78,20 @@ struct StreamListView: View {
                 }
             }
         }
+    }
+
+    private func debounceSearch(_ text: String) async {
+        let query = CatalogSearch.normalizedQuery(text)
+        guard !query.isEmpty else {
+            debouncedSearchText = ""
+            return
+        }
+        do {
+            try await Task.sleep(for: .milliseconds(180))
+        } catch {
+            return
+        }
+        debouncedSearchText = query
     }
 }
 

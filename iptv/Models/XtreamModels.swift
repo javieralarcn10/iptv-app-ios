@@ -1,14 +1,14 @@
 import Foundation
 
-struct XtreamCredentials: Codable {
+struct XtreamCredentials: Codable, Sendable {
     let serverURL: String
     let username: String
     let password: String
     let liveOutputExtension: String?
 }
 
-struct XtreamAuthResponse: Codable {
-    struct UserInfo: Codable {
+struct XtreamAuthResponse: Codable, Sendable {
+    struct UserInfo: Codable, Sendable {
         let auth: Int?
         let status: String?
         let expiryDate: String?
@@ -34,7 +34,7 @@ struct XtreamAuthResponse: Codable {
     }
 }
 
-struct LiveStream: Codable, Identifiable {
+struct LiveStream: Codable, Identifiable, Sendable {
     let streamId: Int
     let name: String
     let streamIcon: String?
@@ -50,7 +50,7 @@ struct LiveStream: Codable, Identifiable {
     }
 }
 
-struct LiveCategory: Codable, Identifiable {
+struct LiveCategory: Codable, Identifiable, Sendable {
     let categoryId: String
     let categoryName: String
     let parentId: String?
@@ -93,7 +93,7 @@ private extension KeyedDecodingContainer {
     }
 }
 
-struct VODStream: Codable, Identifiable {
+struct VODStream: Codable, Identifiable, Sendable {
     let streamId: Int
     let name: String
     let streamIcon: String?
@@ -111,7 +111,7 @@ struct VODStream: Codable, Identifiable {
     }
 }
 
-struct Series: Codable, Identifiable {
+struct Series: Codable, Identifiable, Sendable {
     let seriesId: Int
     let name: String
     let cover: String?
@@ -131,8 +131,8 @@ struct Series: Codable, Identifiable {
     }
 }
 
-struct SeriesInfoResponse: Codable {
-    struct Info: Codable {
+struct SeriesInfoResponse: Codable, Sendable {
+    struct Info: Codable, Sendable {
         let name: String?
         let cover: String?
         let plot: String?
@@ -141,7 +141,7 @@ struct SeriesInfoResponse: Codable {
     let episodes: [String: [Episode]]?
 }
 
-struct Episode: Codable, Identifiable {
+struct Episode: Codable, Identifiable, Sendable {
     let id: String
     let episodeNum: Int?
     let title: String?
@@ -177,10 +177,46 @@ enum MediaSection: Hashable, Sendable {
     }
 }
 
-struct PlayableItem: Identifiable {
+struct PlayableItem: Identifiable, Sendable {
     let id: Int
     let name: String
     let url: URL
     let thumbnailURL: URL?
     var isLive: Bool = false
+}
+
+struct LivePlaylistCachePayload: Sendable {
+    let categories: [LiveCategory]
+    let streams: [LiveStream]
+    let lastUpdated: Date
+}
+
+nonisolated extension LivePlaylistCachePayload: Codable {}
+
+struct MovieCachePayload: Sendable {
+    let streams: [VODStream]
+    let lastUpdated: Date
+}
+
+nonisolated extension MovieCachePayload: Codable {}
+
+struct SeriesCachePayload: Sendable {
+    let series: [Series]
+    let lastUpdated: Date
+}
+
+nonisolated extension SeriesCachePayload: Codable {}
+
+enum CatalogSearch {
+    static func normalizedQuery(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func matches(_ name: String, query: String) -> Bool {
+        guard !query.isEmpty else { return true }
+        return name.range(
+            of: query,
+            options: [.caseInsensitive, .diacriticInsensitive]
+        ) != nil
+    }
 }

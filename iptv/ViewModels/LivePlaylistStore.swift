@@ -10,34 +10,30 @@ final class LivePlaylistStore {
     private(set) var isLoading = false
     private(set) var error: String?
     private(set) var lastUpdated: Date?
+    private(set) var streamCountByCategory: [String: Int] = [:]
 
     private var hasLoaded = false
-
-    /// Precomputed stream count per categoryId — avoids O(categories × streams) in UI.
-    var streamCountByCategory: [String: Int] {
-        var counts: [String: Int] = [:]
-        for stream in streams {
-            if let catId = stream.categoryId {
-                counts[catId, default: 0] += 1
-            }
-        }
-        return counts
-    }
+    private var streamsByCategory: [String: [LiveStream]] = [:]
 
     private init() {}
 
     /// Loads from disk cache if available; only fetches from network when no cache exists.
     func loadIfNeeded() async {
-        guard !hasLoaded else { return }
-        if loadFromDisk() {
+        guard !hasLoaded, !isLoading else { return }
+        isLoading = true
+        error = nil
+        if await loadFromDisk() {
             hasLoaded = true
+            isLoading = false
             return
         }
+        isLoading = false
         await refresh()
     }
 
     /// Always fetches fresh data from the network and updates the disk cache.
     func refresh() async {
+        guard !isLoading else { return }
         isLoading = true
         error = nil
         do {
@@ -45,9 +41,10 @@ final class LivePlaylistStore {
             async let loadedStreams = XtreamAPIService.shared.getLiveStreams()
             categories = try await loadedCategories
             streams = try await loadedStreams
+            rebuildDerivedData()
             lastUpdated = Date()
             hasLoaded = true
-            saveToDisk()
+            await saveToDisk()
         } catch {
             self.error = error.localizedDescription
         }
@@ -57,20 +54,38 @@ final class LivePlaylistStore {
     func clear() {
         categories = []
         streams = []
+        streamCountByCategory = [:]
+        streamsByCategory = [:]
         error = nil
         lastUpdated = nil
         hasLoaded = false
         clearDiskCache()
     }
 
+    func streams(for categoryId: String?) -> [LiveStream] {
+        guard let categoryId else { return streams }
+        return streamsByCategory[categoryId] ?? []
+    }
+
+    private func rebuildDerivedData() {
+        var counts: [String: Int] = [:]
+        var grouped: [String: [LiveStream]] = [:]
+
+        counts.reserveCapacity(categories.count)
+        grouped.reserveCapacity(categories.count)
+
+        for stream in streams {
+            guard let categoryId = stream.categoryId else { continue }
+            counts[categoryId, default: 0] += 1
+            grouped[categoryId, default: []].append(stream)
+        }
+
+        streamCountByCategory = counts
+        streamsByCategory = grouped
+    }
+
     // MARK: - Disk cache
     // Stored in DocumentsDirectory so iOS never purges it — playlist persists indefinitely.
-
-    private struct CachePayload: Codable {
-        let categories: [LiveCategory]
-        let streams: [LiveStream]
-        let lastUpdated: Date
-    }
 
     private var cacheURL: URL? {
         FileManager.default
@@ -79,22 +94,27 @@ final class LivePlaylistStore {
             .appendingPathComponent("live_playlist_cache.json")
     }
 
-    private func saveToDisk() {
+    private func saveToDisk() async {
         guard let url = cacheURL, let date = lastUpdated else { return }
-        do {
-            let data = try JSONEncoder().encode(CachePayload(categories: categories, streams: streams, lastUpdated: date))
-            try data.write(to: url, options: .atomic)
-        } catch {}
+        let payload = LivePlaylistCachePayload(categories: categories, streams: streams, lastUpdated: date)
+        await Task.detached(priority: .utility, operation: {
+            do {
+                let data = try JSONEncoder().encode(payload)
+                try data.write(to: url, options: .atomic)
+            } catch {}
+        }).value
     }
 
     @discardableResult
-    private func loadFromDisk() -> Bool {
-        guard let url = cacheURL,
-              let data = try? Data(contentsOf: url),
-              let payload = try? JSONDecoder().decode(CachePayload.self, from: data)
-        else { return false }
+    private func loadFromDisk() async -> Bool {
+        guard let url = cacheURL else { return false }
+        guard let payload = await Task.detached(priority: .userInitiated, operation: { () -> LivePlaylistCachePayload? in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? JSONDecoder().decode(LivePlaylistCachePayload.self, from: data)
+        }).value else { return false }
         categories = payload.categories
         streams = payload.streams
+        rebuildDerivedData()
         lastUpdated = payload.lastUpdated
         return true
     }
@@ -104,3 +124,4 @@ final class LivePlaylistStore {
         try? FileManager.default.removeItem(at: url)
     }
 }
+

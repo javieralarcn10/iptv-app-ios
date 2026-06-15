@@ -3,10 +3,15 @@ import SwiftUI
 struct SeriesListView: View {
     @State private var store = SeriesStore.shared
     @State private var searchText = ""
+    @State private var debouncedSearchText = ""
+
+    private var searchQuery: String {
+        CatalogSearch.normalizedQuery(debouncedSearchText)
+    }
 
     private var filtered: [Series] {
-        searchText.isEmpty ? store.series : store.series.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText)
+        searchQuery.isEmpty ? store.series : store.series.filter {
+            CatalogSearch.matches($0.name, query: searchQuery)
         }
     }
 
@@ -17,6 +22,9 @@ struct SeriesListView: View {
         }
         .navigationTitle(MediaSection.series.title)
         .searchable(text: $searchText, prompt: "Buscar")
+        .task(id: searchText) {
+            await debounceSearch(searchText)
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -42,7 +50,8 @@ struct SeriesListView: View {
         } else if let err = store.error, store.series.isEmpty {
             ErrorView(message: err) { Task { await store.refresh() } }
         } else {
-            List(filtered) { series in
+            let seriesList = filtered
+            List(seriesList) { series in
                 NavigationLink {
                     SeriesDetailView(series: series)
                 } label: {
@@ -58,7 +67,7 @@ struct SeriesListView: View {
             .scrollDismissesKeyboard(.immediately)
             .refreshable { await store.refresh() }
             .overlay {
-                if filtered.isEmpty {
+                if seriesList.isEmpty {
                     ContentUnavailableView(
                         "Sin resultados",
                         systemImage: "magnifyingglass",
@@ -67,5 +76,19 @@ struct SeriesListView: View {
                 }
             }
         }
+    }
+
+    private func debounceSearch(_ text: String) async {
+        let query = CatalogSearch.normalizedQuery(text)
+        guard !query.isEmpty else {
+            debouncedSearchText = ""
+            return
+        }
+        do {
+            try await Task.sleep(for: .milliseconds(180))
+        } catch {
+            return
+        }
+        debouncedSearchText = query
     }
 }

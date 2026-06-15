@@ -3,10 +3,15 @@ import SwiftUI
 struct LiveTVView: View {
     @State private var playlist = LivePlaylistStore.shared
     @State private var searchText = ""
+    @State private var debouncedSearchText = ""
+
+    private var searchQuery: String {
+        CatalogSearch.normalizedQuery(debouncedSearchText)
+    }
 
     private var filteredStreams: [LiveStream] {
-        guard !searchText.isEmpty else { return [] }
-        return playlist.streams.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        guard !searchQuery.isEmpty else { return [] }
+        return playlist.streams.filter { CatalogSearch.matches($0.name, query: searchQuery) }
     }
 
     var body: some View {
@@ -17,6 +22,9 @@ struct LiveTVView: View {
         }
         .navigationTitle("Live TV")
         .searchable(text: $searchText, prompt: "Buscar canal")
+        .task(id: searchText) {
+            await debounceSearch(searchText)
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -41,8 +49,9 @@ struct LiveTVView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let err = playlist.error, playlist.streams.isEmpty {
             ErrorView(message: err) { Task { await playlist.refresh() } }
-        } else if !searchText.isEmpty {
-            channelList(filteredStreams)
+        } else if !searchQuery.isEmpty {
+            let streams = filteredStreams
+            channelList(streams)
         } else {
             categoryList
         }
@@ -87,7 +96,7 @@ struct LiveTVView: View {
     }
 
     private func channelList(_ streams: [LiveStream]) -> some View {
-        List(Array(streams.enumerated()), id: \.offset) { _, stream in
+        List(streams) { stream in
             LiveChannelNavigationLink(stream: stream)
                 .buttonStyle(.plain)
                 .listRowBackground(Color.clear)
@@ -105,6 +114,20 @@ struct LiveTVView: View {
         }
     }
 
+    private func debounceSearch(_ text: String) async {
+        let query = CatalogSearch.normalizedQuery(text)
+        guard !query.isEmpty else {
+            debouncedSearchText = ""
+            return
+        }
+        do {
+            try await Task.sleep(for: .milliseconds(180))
+        } catch {
+            return
+        }
+        debouncedSearchText = query
+    }
+
 }
 
 struct LiveCategoryChannelsView: View {
@@ -113,20 +136,25 @@ struct LiveCategoryChannelsView: View {
     @Binding var searchText: String
 
     @State private var playlist = LivePlaylistStore.shared
+    @State private var debouncedSearchText = ""
+
+    private var searchQuery: String {
+        CatalogSearch.normalizedQuery(debouncedSearchText)
+    }
 
     private var visibleStreams: [LiveStream] {
-        if !searchText.isEmpty {
-            return playlist.streams.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        if !searchQuery.isEmpty {
+            return playlist.streams.filter { CatalogSearch.matches($0.name, query: searchQuery) }
         }
-        guard let categoryId else { return playlist.streams }
-        return playlist.streams.filter { $0.categoryId == categoryId }
+        return playlist.streams(for: categoryId)
     }
 
     var body: some View {
         ZStack {
             DarkBackground()
 
-            List(Array(visibleStreams.enumerated()), id: \.offset) { _, stream in
+            let streams = visibleStreams
+            List(streams) { stream in
                 LiveChannelNavigationLink(stream: stream)
                     .buttonStyle(.plain)
                     .listRowBackground(Color.clear)
@@ -134,7 +162,7 @@ struct LiveCategoryChannelsView: View {
             .scrollContentBackground(.hidden)
             .scrollDismissesKeyboard(.immediately)
             .overlay {
-                if visibleStreams.isEmpty {
+                if streams.isEmpty {
                     ContentUnavailableView(
                         "Sin canales",
                         systemImage: "tv.slash",
@@ -143,8 +171,11 @@ struct LiveCategoryChannelsView: View {
                 }
             }
         }
-        .navigationTitle(searchText.isEmpty ? title : "Resultados")
+        .navigationTitle(searchQuery.isEmpty ? title : "Resultados")
         .searchable(text: $searchText, prompt: "Buscar canal")
+        .task(id: searchText) {
+            await debounceSearch(searchText)
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -159,6 +190,20 @@ struct LiveCategoryChannelsView: View {
                 .disabled(playlist.isLoading)
             }
         }
+    }
+
+    private func debounceSearch(_ text: String) async {
+        let query = CatalogSearch.normalizedQuery(text)
+        guard !query.isEmpty else {
+            debouncedSearchText = ""
+            return
+        }
+        do {
+            try await Task.sleep(for: .milliseconds(180))
+        } catch {
+            return
+        }
+        debouncedSearchText = query
     }
 }
 

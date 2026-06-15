@@ -3,19 +3,10 @@ import SwiftUI
 struct SeriesDetailView: View {
     let series: Series
 
-    @State private var response: SeriesInfoResponse?
+    @State private var seasons: [SeasonSection] = []
     @State private var isLoading = false
     @State private var error: String?
-
-    private var seasons: [(number: String, episodes: [Episode])] {
-        guard let eps = response?.episodes else { return [] }
-        return eps.keys
-            .sorted { (Int($0) ?? 0) < (Int($1) ?? 0) }
-            .compactMap { key in
-                guard let list = eps[key], !list.isEmpty else { return nil }
-                return (number: key, episodes: list)
-            }
-    }
+    @State private var hasLoaded = false
 
     var body: some View {
         ZStack {
@@ -42,19 +33,17 @@ struct SeriesDetailView: View {
             )
         } else {
             List {
-                ForEach(seasons, id: \.number) { season in
+                ForEach(seasons) { season in
                     Section("Temporada \(season.number)") {
-                        ForEach(season.episodes) { episode in
-                            if let item = playableItem(from: episode) {
-                                NavigationLink {
-                                    PlayerView(item: item)
-                                } label: {
-                                    EpisodeRow(episode: episode)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .listRowBackground(Color.clear)
+                        ForEach(season.episodes) { playableEpisode in
+                            NavigationLink {
+                                PlayerView(item: playableEpisode.item)
+                            } label: {
+                                EpisodeRow(episode: playableEpisode.episode)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
                             }
+                            .listRowBackground(Color.clear)
                         }
                     }
                 }
@@ -79,15 +68,47 @@ struct SeriesDetailView: View {
     }
 
     private func loadContent() async {
+        guard !hasLoaded, !isLoading else { return }
         isLoading = true
         error = nil
         do {
-            response = try await XtreamAPIService.shared.getSeriesInfo(seriesId: series.seriesId)
+            let loadedResponse = try await XtreamAPIService.shared.getSeriesInfo(seriesId: series.seriesId)
+            seasons = seasonSections(from: loadedResponse)
+            hasLoaded = true
         } catch {
             self.error = error.localizedDescription
         }
         isLoading = false
     }
+
+    private func seasonSections(from response: SeriesInfoResponse) -> [SeasonSection] {
+        guard let episodes = response.episodes else { return [] }
+        return episodes.keys
+            .sorted { (Int($0) ?? 0) < (Int($1) ?? 0) }
+            .compactMap { key in
+                guard let list = episodes[key] else { return nil }
+                let playableEpisodes = list.compactMap { episode -> PlayableEpisode? in
+                    guard let item = playableItem(from: episode) else { return nil }
+                    return PlayableEpisode(episode: episode, item: item)
+                }
+                guard !playableEpisodes.isEmpty else { return nil }
+                return SeasonSection(number: key, episodes: playableEpisodes)
+            }
+    }
+}
+
+private struct SeasonSection: Identifiable {
+    let number: String
+    let episodes: [PlayableEpisode]
+
+    var id: String { number }
+}
+
+private struct PlayableEpisode: Identifiable {
+    let episode: Episode
+    let item: PlayableItem
+
+    var id: String { episode.id }
 }
 
 private struct EpisodeRow: View {

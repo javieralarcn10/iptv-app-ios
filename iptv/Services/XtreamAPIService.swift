@@ -22,8 +22,16 @@ final class XtreamAPIService {
     static let shared = XtreamAPIService()
 
     private var credentials: XtreamCredentials?
+    private let session: URLSession
 
-    private init() {}
+    private init() {
+        let config = URLSessionConfiguration.default
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 120
+        config.httpMaximumConnectionsPerHost = 4
+        session = URLSession(configuration: config)
+    }
 
     func configure(with credentials: XtreamCredentials) {
         self.credentials = credentials
@@ -101,7 +109,7 @@ final class XtreamAPIService {
 
     private func get(url: URL) async throws -> Data {
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await session.data(from: url)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                 throw XtreamError.authFailed
             }
