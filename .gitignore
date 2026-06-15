@@ -1,0 +1,72 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+timeline.xctimeline
+playground.xcworkspace
+
+# User-specific Xcode data (keep xcshareddata/ — e.g. Package.resolved)
+**/xcuserdata/
+
+# Swift Package Manager (local checkouts/builds; Package.resolved in xcshareddata is tracked)
+.build/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+
+# CocoaPods (por si se añade en el futuro)
+Pods/
+*.xcworkspace
+!*.xcodeproj/project.xcworkspace
+
+# Carthage
+Carthage/Build/
+Carthage/Checkouts
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Accesos / secretos
+.env
+.env.*
+*.pem
+*.p12
+*.mobileprovision
+Secrets.swift
+
+# Editores
+*.swp
+*~
+.idea/
+.vscode/
+
+# Logs y cachés locales
+*.log
+*.tmp
+*.temp
+.cache/

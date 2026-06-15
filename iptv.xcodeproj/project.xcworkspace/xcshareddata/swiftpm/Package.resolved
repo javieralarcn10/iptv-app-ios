@@ -1,0 +1,15 @@
+{
+  "originHash" : "bd7b71cbb99159d545e54e854dec007a7b2145c792a1ccc4ed2f510f30308e6b",
+  "pins" : [
+    {
+      "identity" : "vlckit-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/virtualox/vlckit-spm",
+      "state" : {
+        "branch" : "main",
+        "revision" : "ec605641e33784476e6a1dd70fa474842e6eefa6"
+      }
+    }
+  ],
+  "version" : 3
+}
