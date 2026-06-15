@@ -222,6 +222,8 @@ struct PlayerView: View {
                         }
                     }
                 }
+                .padding(.bottom, 44)
+
 
                 Spacer()
 

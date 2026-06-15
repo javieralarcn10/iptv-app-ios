@@ -59,7 +59,7 @@ final class PlaybackController: NSObject, VLCMediaPlayerDelegate, VLCDrawable, V
 
     /// Tamaño del búfer de red en milisegundos. Más alto = menos microcortes
     /// pero más retraso respecto al directo.
-    private static let bufferMilliseconds = 10_000
+    private static let bufferMilliseconds = 15_000
 
     private let originalURL: URL
     private var playbackURL: URL
